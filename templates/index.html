@@ -6,14 +6,25 @@
     <title>Text zu Sprache Konverter</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
             line-height: 1.6;
+            color: #333;
+            background-color: #f9f9f9;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
         }
         .error {
-            color: red;
+            color: #e74c3c;
+            padding: 10px;
+            background-color: #fdecea;
+            border-radius: 4px;
+            margin-bottom: 15px;
         }
         .text-container {
             margin: 20px 0;
@@ -23,47 +34,108 @@
             max-height: 500px;
             overflow-y: auto;
             white-space: pre-wrap;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         audio {
             width: 100%;
             margin-top: 20px;
+            border-radius: 4px;
         }
         #loading {
             display: none;
-            color: blue;
-            margin-top: 10px;
+            color: #3498db;
+            margin: 15px 0;
+            font-style: italic;
         }
         .tts-options {
-            margin: 15px 0;
+            margin: 25px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
         }
         .tts-option {
-            margin-right: 15px;
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background-color: #f0f0f0;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tts-option:hover {
+            background-color: #e0e0e0;
+        }
+        .tts-option input {
+            margin-right: 8px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .file-upload {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px dashed #bdc3c7;
+            border-radius: 5px;
+            text-align: center;
+            background-color: white;
+        }
+        .file-upload:hover {
+            border-color: #3498db;
+        }
+        .audio-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #7f8c8d;
         }
     </style>
 </head>
 <body>
     <h1>Text zu Sprache Konverter</h1>
-    <p>Laden Sie eine Text-, PDF- oder EPUB-Datei hoch (auf Deutsch)</p>
+    <p>Konvertieren Sie Ihre deutschen Texte in natürliche Sprachausgabe</p>
 
     {% if error %}
         <div class="error">{{ error }}</div>
     {% endif %}
 
-    <form method="post" enctype="multipart/form-data" id="uploadForm">
-        <input type="file" name="book" accept=".txt,.pdf,.epub" required>
-        <button type="submit">Datei hochladen</button>
-    </form>
+    <div class="file-upload">
+        <form method="post" enctype="multipart/form-data" id="uploadForm">
+            <input type="file" name="book" accept=".txt,.pdf,.epub" required>
+            <button type="submit">Datei hochladen</button>
+        </form>
+    </div>
 
     {% if show_text %}
-        <h2>Textinhalt:</h2>
+        <h2>Extrahiertes Text:</h2>
         <div class="text-container">{{ book_text }}</div>
 
+        <h2>Sprachsynthese Optionen:</h2>
         <div class="tts-options">
             <label class="tts-option">
-                <input type="radio" name="tts_engine" value="gtts" checked> gTTS (Google)
+                <input type="radio" name="tts_engine" value="gtts" checked>
+                gTTS (Google)
             </label>
             <label class="tts-option">
-                <input type="radio" name="tts_engine" value="coqui"> Coqui TTS
+                <input type="radio" name="tts_engine" value="coqui">
+                Coqui TTS
+            </label>
+            <label class="tts-option">
+                <input type="radio" name="tts_engine" value="openai">
+                OpenAI (Premium)
             </label>
         </div>
 
@@ -71,10 +143,11 @@
         <div id="loading">Audio wird generiert, bitte warten...</div>
 
         <div id="audioContainer" style="display: none;">
-            <h2>Audio (<span id="engineName">gTTS</span>):</h2>
+            <h2>Generiertes Audio (<span id="engineName">gTTS</span>):</h2>
             <audio controls id="audioPlayer">
                 Ihr Browser unterstützt das Audio-Element nicht.
             </audio>
+            <div class="audio-info" id="audioInfo"></div>
         </div>
 
         <input type="hidden" id="sessionId" value="{{ session_id }}">
@@ -85,8 +158,13 @@
             const btn = this;
             const loading = document.getElementById('loading');
             const audioContainer = document.getElementById('audioContainer');
+            const audioInfo = document.getElementById('audioInfo');
             const sessionId = document.getElementById('sessionId').value;
             const ttsEngine = document.querySelector('input[name="tts_engine"]:checked').value;
+
+            // Сброс предыдущего аудио
+            audioContainer.style.display = 'none';
+            audioInfo.textContent = '';
 
             btn.disabled = true;
             loading.style.display = 'block';
@@ -98,21 +176,46 @@
                 },
                 body: `session_id=${encodeURIComponent(sessionId)}&tts_engine=${encodeURIComponent(ttsEngine)}`
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.error) {
-                    alert('Fehler: ' + data.error);
-                } else {
-                    const audioPlayer = document.getElementById('audioPlayer');
-                    const engineName = document.getElementById('engineName');
-
-                    audioPlayer.src = data.audio_path;
-                    engineName.textContent = data.engine === 'coqui' ? 'Coqui TTS' : 'gTTS';
-                    audioContainer.style.display = 'block';
+                    throw new Error(data.error);
                 }
+
+                const audioPlayer = document.getElementById('audioPlayer');
+                const engineName = document.getElementById('engineName');
+
+                // Установка источника аудио
+                audioPlayer.src = data.audio_path;
+
+                // Отображение названия движка
+                const engineNames = {
+                    'gtts': 'Google TTS',
+                    'coqui': 'Coqui TTS',
+                    'openai': 'OpenAI TTS'
+                };
+                engineName.textContent = engineNames[data.engine] || data.engine;
+
+                // Информация о качестве
+                audioInfo.textContent = `Qualität: ${
+                    data.engine === 'openai' ? 'Hoch (neuronal)' :
+                    data.engine === 'coqui' ? 'Mittel (neuronal)' :
+                    'Basis (konkatenativ)'
+                }`;
+
+                // Показываем аудиоплеер после загрузки
+                audioPlayer.oncanplay = () => {
+                    audioContainer.style.display = 'block';
+                };
             })
             .catch(error => {
-                alert('Fehler bei der Generierung des Audios: ' + error);
+                alert('Fehler: ' + error.message);
+                console.error('Error:', error);
             })
             .finally(() => {
                 btn.disabled = false;

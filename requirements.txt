@@ -10,3 +10,5 @@ gtts
 torch
 TTS
 soundfile
+openai
+python-dotenv

@@ -8,7 +8,10 @@ from gtts import gTTS
 import uuid
 import torch
 from TTS.api import TTS
+from openai import OpenAI
 import soundfile as sf
+from dotenv import load_dotenv
+load_dotenv()  # Загружает переменные из .env
 
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'txt', 'epub', 'pdf'}
@@ -24,6 +27,7 @@ os.makedirs('static', exist_ok=True)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 coqui_tts = TTS("tts_models/de/thorsten/vits").to(device)
 
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -93,6 +97,25 @@ def synthesize_coqui(text):
         raise Exception(f"Ошибка при синтезе речи (Coqui): {str(e)}")
 
 
+def synthesize_openai(text, voice="nova"):
+    """Синтез речи с помощью OpenAI TTS"""
+    try:
+        text_for_tts = text[:MAX_TEXT_LENGTH_FOR_TTS]
+        audio_filename = f"audio_openai_{uuid.uuid4().hex}.mp3"
+        output_path = os.path.join('static', audio_filename)
+
+        response = client.audio.speech.create(
+            model="tts-1",  # или "tts-1-hd" для улучшенного качества
+            voice=voice,
+            input=text_for_tts,
+            speed=1.0  # Опционально: регулировка скорости (0.25–4.0)
+        )
+
+        response.stream_to_file(output_path)
+        return audio_filename
+    except Exception as e:
+        raise Exception(f"Ошибка при синтезе речи (OpenAI): {str(e)}")
+
 
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():
@@ -161,6 +184,8 @@ def generate_audio():
 
         if tts_engine == 'coqui':
             audio_filename = synthesize_coqui(book_text)
+        elif tts_engine == 'openai':
+            audio_filename = synthesize_openai(book_text)  # Новый вариант
         else:
             audio_filename = synthesize_gtts(book_text)
 
@@ -172,7 +197,6 @@ def generate_audio():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 if __name__ == '__main__':
     app.secret_key = 'super_secret_key'
