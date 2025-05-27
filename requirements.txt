@@ -1,0 +1,12 @@
+Flask
+Werkzeug
+ebooklib
+PyMuPDF
+beautifulsoup4
+scipy
+numpy
+bark
+gtts
+torch
+TTS
+soundfile

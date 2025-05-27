@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text zu Sprache Konverter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .error {
+            color: red;
+        }
+        .text-container {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        audio {
+            width: 100%;
+            margin-top: 20px;
+        }
+        #loading {
+            display: none;
+            color: blue;
+            margin-top: 10px;
+        }
+        .tts-options {
+            margin: 15px 0;
+        }
+        .tts-option {
+            margin-right: 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Text zu Sprache Konverter</h1>
+    <p>Laden Sie eine Text-, PDF- oder EPUB-Datei hoch (auf Deutsch)</p>
+
+    {% if error %}
+        <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" id="uploadForm">
+        <input type="file" name="book" accept=".txt,.pdf,.epub" required>
+        <button type="submit">Datei hochladen</button>
+    </form>
+
+    {% if show_text %}
+        <h2>Textinhalt:</h2>
+        <div class="text-container">{{ book_text }}</div>
+
+        <div class="tts-options">
+            <label class="tts-option">
+                <input type="radio" name="tts_engine" value="gtts" checked> gTTS (Google)
+            </label>
+            <label class="tts-option">
+                <input type="radio" name="tts_engine" value="coqui"> Coqui TTS
+            </label>
+        </div>
+
+        <button id="generateAudioBtn">Audio generieren</button>
+        <div id="loading">Audio wird generiert, bitte warten...</div>
+
+        <div id="audioContainer" style="display: none;">
+            <h2>Audio (<span id="engineName">gTTS</span>):</h2>
+            <audio controls id="audioPlayer">
+                Ihr Browser unterstützt das Audio-Element nicht.
+            </audio>
+        </div>
+
+        <input type="hidden" id="sessionId" value="{{ session_id }}">
+    {% endif %}
+
+    <script>
+        document.getElementById('generateAudioBtn').addEventListener('click', function() {
+            const btn = this;
+            const loading = document.getElementById('loading');
+            const audioContainer = document.getElementById('audioContainer');
+            const sessionId = document.getElementById('sessionId').value;
+            const ttsEngine = document.querySelector('input[name="tts_engine"]:checked').value;
+
+            btn.disabled = true;
+            loading.style.display = 'block';
+
+            fetch('/generate_audio', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `session_id=${encodeURIComponent(sessionId)}&tts_engine=${encodeURIComponent(ttsEngine)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Fehler: ' + data.error);
+                } else {
+                    const audioPlayer = document.getElementById('audioPlayer');
+                    const engineName = document.getElementById('engineName');
+
+                    audioPlayer.src = data.audio_path;
+                    engineName.textContent = data.engine === 'coqui' ? 'Coqui TTS' : 'gTTS';
+                    audioContainer.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                alert('Fehler bei der Generierung des Audios: ' + error);
+            })
+            .finally(() => {
+                btn.disabled = false;
+                loading.style.display = 'none';
+            });
+        });
+    </script>
+</body>
+</html>
