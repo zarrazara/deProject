@@ -110,7 +110,7 @@ networkx==2.8.8
 nltk==3.9.1
 num2words==0.5.14
 numba==0.60.0
-numpy==1.22.0
+numpy>=1.22.3
 openai==1.82.0
 packaging==25.0
 pandas==1.5.3
