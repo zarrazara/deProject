@@ -14,11 +14,13 @@ from dotenv import load_dotenv
 import edge_tts
 import asyncio
 import pyttsx3
+import time
+import librosa
 
 load_dotenv()
 
 UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'txt', 'epub', 'pdf'}
+ALLOWED_EXTENSIONS = {'txt', 'pdf'}
 MAX_TEXT_LENGTH_FOR_TTS = 5000
 
 app = Flask(__name__)
@@ -33,8 +35,25 @@ coqui_tts = TTS("tts_models/de/thorsten/vits").to(device)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def get_audio_duration(file_path):
+    try:
+        y, sr = librosa.load(file_path, sr=None)
+        duration = librosa.get_duration(y=y, sr=sr)
+        return duration
+    except Exception as e:
+        return 0.0
+
+
+def get_audio_size_kb(file_path):
+    try:
+        return round(os.path.getsize(file_path) / 1024, 2)
+    except:
+        return 0.0
 
 
 def extract_text_from_txt(filepath):
@@ -54,93 +73,6 @@ def extract_text_from_pdf(filepath):
         return text
     except Exception as e:
         raise Exception(f"Ошибка при чтении PDF файла: {str(e)}")
-
-
-def synthesize_gtts(text, lang='de'):
-    """Синтез речи с помощью gTTS"""
-    try:
-        text_for_tts = text[:MAX_TEXT_LENGTH_FOR_TTS]
-        audio_filename = f"audio_gtts_{uuid.uuid4().hex}.mp3"
-        output_path = os.path.join('static', audio_filename)
-
-        tts = gTTS(text=text_for_tts, lang=lang, slow=False)
-        tts.save(output_path)
-        return audio_filename
-    except Exception as e:
-        raise Exception(f"Ошибка при синтезе речи (gTTS): {str(e)}")
-
-
-def synthesize_coqui(text):
-    """Синтез речи с помощью Coqui TTS (VITS)"""
-    try:
-        text_for_tts = text[:MAX_TEXT_LENGTH_FOR_TTS]
-        audio_filename = f"audio_coqui_{uuid.uuid4().hex}.wav"
-        output_path = os.path.join('static', audio_filename)
-
-        coqui_tts.tts_to_file(
-            text=text_for_tts,
-            file_path=output_path
-        )
-
-        return audio_filename
-    except Exception as e:
-        raise Exception(f"Ошибка при синтезе речи (Coqui): {str(e)}")
-
-
-def synthesize_openai(text, voice="fable"):
-    """Синтез речи с помощью OpenAI TTS"""
-    try:
-        text_for_tts = text[:MAX_TEXT_LENGTH_FOR_TTS]
-        audio_filename = f"audio_openai_{uuid.uuid4().hex}.mp3"
-        output_path = os.path.join('static', audio_filename)
-
-        response = client.audio.speech.create(
-            model="tts-1-hd",
-            voice=voice,
-            input=text_for_tts,
-            speed=1.0
-        )
-
-        response.stream_to_file(output_path)
-        return audio_filename
-    except Exception as e:
-        raise Exception(f"Ошибка при синтезе речи (OpenAI): {str(e)}")
-
-
-async def synthesize_edge_async(text, voice="de-DE-KatjaNeural"):
-    """Синтез речи с помощью Edge TTS"""
-    try:
-        audio_filename = f"audio_edge_{uuid.uuid4().hex}.mp3"
-        output_path = os.path.join('static', audio_filename)
-
-        communicate = edge_tts.Communicate(text[:MAX_TEXT_LENGTH_FOR_TTS], voice)
-        await communicate.save(output_path)
-        return audio_filename
-    except Exception as e:
-        raise Exception(f"Ошибка при синтезе речи (Edge TTS): {str(e)}")
-
-
-def synthesize_edge(text, voice="de-DE-KatjaNeural"):
-    return asyncio.run(synthesize_edge_async(text, voice))
-
-
-def synthesize_pyttsx3(text, voice_id=None):
-    """Синтез речи с помощью pyttsx3 (оффлайн)"""
-    try:
-        audio_filename = f"audio_pyttsx3_{uuid.uuid4().hex}.wav"
-        output_path = os.path.join('static', audio_filename)
-
-        engine = pyttsx3.init()
-
-        if voice_id:
-            engine.setProperty('voice', voice_id)
-
-        engine.save_to_file(text[:MAX_TEXT_LENGTH_FOR_TTS], output_path)
-        engine.runAndWait()
-
-        return audio_filename
-    except Exception as e:
-        raise Exception(f"Ошибка при синтезе речи (pyttsx3): {str(e)}")
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -189,17 +121,176 @@ def upload_file():
     return render_template('index.html')
 
 
+def synthesize_gtts(text, lang='de'):
+    try:
+        import time
+        text_for_tts = text[:MAX_TEXT_LENGTH_FOR_TTS]
+        audio_filename = f"audio_gtts_{uuid.uuid4().hex}.mp3"
+        output_path = os.path.join('static', audio_filename)
+
+        start_time = time.time()
+
+        tts = gTTS(text=text_for_tts, lang=lang, slow=False)
+        tts.save(output_path)
+
+        generation_time = time.time() - start_time
+        duration = round(get_audio_duration(output_path), 2)
+        size_kb = get_audio_size_kb(output_path)
+        speed = round(duration / generation_time, 2) if generation_time > 0 else 0
+
+        return {
+            "filename": audio_filename,
+            "phonemes": None,
+            "duration": duration,
+            "size_kb": size_kb,
+            "generation_time": round(generation_time, 2),
+            "speed": speed
+        }
+    except Exception as e:
+        raise Exception(f"Error (gTTS): {str(e)}")
+
+
+def synthesize_coqui(text):
+    try:
+        import time
+        text_for_tts = text[:MAX_TEXT_LENGTH_FOR_TTS]
+        audio_filename = f"audio_coqui_{uuid.uuid4().hex}.wav"
+        output_path = os.path.join('static', audio_filename)
+
+        start_time = time.time()
+
+        # Убедись, что метод phonemize доступен, иначе убери эту строку
+        phonemes = None
+        if hasattr(coqui_tts, 'phonemize'):
+            phonemes = coqui_tts.phonemize(text_for_tts)
+
+        coqui_tts.tts_to_file(text=text_for_tts, file_path=output_path)
+
+        generation_time = time.time() - start_time
+        duration = round(get_audio_duration(output_path), 2)
+        size_kb = get_audio_size_kb(output_path)
+        speed = round(duration / generation_time, 2) if generation_time > 0 else 0
+
+        return {
+            "filename": audio_filename,
+            "phonemes": phonemes,
+            "duration": duration,
+            "size_kb": size_kb,
+            "generation_time": round(generation_time, 2),
+            "speed": speed
+        }
+    except Exception as e:
+        raise Exception(f"Ошибка при синтезе речи (Coqui): {str(e)}")
+
+
+def synthesize_openai(text, voice="fable"):
+    try:
+        import time
+        text_for_tts = text[:MAX_TEXT_LENGTH_FOR_TTS]
+        audio_filename = f"audio_openai_{uuid.uuid4().hex}.mp3"
+        output_path = os.path.join('static', audio_filename)
+
+        start_time = time.time()
+
+        response = client.audio.speech.create(
+            model="tts-1-hd",
+            voice=voice,
+            input=text_for_tts,
+            speed=1.0
+        )
+        response.stream_to_file(output_path)
+
+        generation_time = time.time() - start_time
+        duration = round(get_audio_duration(output_path), 2)
+        size_kb = get_audio_size_kb(output_path)
+        speed = round(duration / generation_time, 2) if generation_time > 0 else 0
+
+        return {
+            "filename": audio_filename,
+            "phonemes": None,
+            "duration": duration,
+            "size_kb": size_kb,
+            "generation_time": round(generation_time, 2),
+            "speed": speed
+        }
+    except Exception as e:
+        raise Exception(f"Error (OpenAI): {str(e)}")
+
+
+async def synthesize_edge_async(text, voice="de-DE-KatjaNeural"):
+    try:
+        import time
+        audio_filename = f"audio_edge_{uuid.uuid4().hex}.mp3"
+        output_path = os.path.join('static', audio_filename)
+
+        start_time = time.time()
+
+        communicate = edge_tts.Communicate(text[:MAX_TEXT_LENGTH_FOR_TTS], voice)
+        await communicate.save(output_path)
+
+        generation_time = time.time() - start_time
+        duration = round(get_audio_duration(output_path), 2)
+        size_kb = get_audio_size_kb(output_path)
+        speed = round(duration / generation_time, 2) if generation_time > 0 else 0
+
+        return {
+            "filename": audio_filename,
+            "phonemes": None,
+            "duration": duration,
+            "size_kb": size_kb,
+            "generation_time": round(generation_time, 2),
+            "speed": speed
+        }
+    except Exception as e:
+        raise Exception(f"Error (Edge TTS): {str(e)}")
+
+
+def synthesize_edge(text, voice="de-DE-KatjaNeural"):
+    return asyncio.run(synthesize_edge_async(text, voice))
+
+
+def synthesize_pyttsx3(text, voice_id=None):
+    try:
+        import time
+        audio_filename = f"audio_pyttsx3_{uuid.uuid4().hex}.wav"
+        output_path = os.path.join('static', audio_filename)
+
+        engine = pyttsx3.init()
+        if voice_id:
+            engine.setProperty('voice', voice_id)
+
+        start_time = time.time()
+
+        engine.save_to_file(text[:MAX_TEXT_LENGTH_FOR_TTS], output_path)
+        engine.runAndWait()
+
+        generation_time = time.time() - start_time
+        duration = round(get_audio_duration(output_path), 2)
+        size_kb = get_audio_size_kb(output_path)
+        speed = round(duration / generation_time, 2) if generation_time > 0 else 0
+
+        return {
+            "filename": audio_filename,
+            "phonemes": None,
+            "duration": duration,
+            "size_kb": size_kb,
+            "generation_time": round(generation_time, 2),
+            "speed": speed
+        }
+    except Exception as e:
+        raise Exception(f"Error (pyttsx3): {str(e)}")
+
+
 @app.route('/generate_audio', methods=['POST'])
 def generate_audio():
     try:
         session_id = request.form.get('session_id')
-        tts_engine = request.form.get('tts_engine', 'gtts')  # По умолчанию gTTS
+        tts_engine = request.form.get('tts_engine', 'gtts')
 
         if not session_id:
             return jsonify({'error': 'Session ID missing'}), 400
 
         temp_text_file = os.path.join(app.config['UPLOAD_FOLDER'], f"{session_id}.txt")
-
         if not os.path.exists(temp_text_file):
             return jsonify({'error': 'Text not found'}), 404
 
@@ -207,23 +298,30 @@ def generate_audio():
             book_text = f.read()
 
         if tts_engine == 'coqui':
-            audio_filename = synthesize_coqui(book_text)
+            result = synthesize_coqui(book_text)
         elif tts_engine == 'openai':
-            audio_filename = synthesize_openai(book_text)
+            result = synthesize_openai(book_text)
         elif tts_engine == 'edge':
-            audio_filename = synthesize_edge(book_text)
+            result = synthesize_edge(book_text)
         elif tts_engine == 'pyttsx3':
-            audio_filename = synthesize_pyttsx3(book_text)
+            result = synthesize_pyttsx3(book_text)
         else:
-            audio_filename = synthesize_gtts(book_text)
-
+            result = synthesize_gtts(book_text)
 
         return jsonify({
-            'audio_path': url_for('static', filename=audio_filename),
-            'engine': tts_engine
+            'audio_path': url_for('static', filename=result['filename']),
+            'engine': tts_engine,
+            'phonemes': result.get('phonemes'),
+            'duration': result.get('duration'),
+            'size_kb': result.get('size_kb'),
+            'generation_time': result.get('generation_time'),
+            'speed': result.get('speed')
         })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
 
 if __name__ == '__main__':
     app.secret_key = 'super_secret_key'

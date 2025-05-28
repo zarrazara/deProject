@@ -4,20 +4,40 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Text zu Sprache Konverter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: "JetBrains Mono", monospace;
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
             line-height: 1.6;
             color: #333;
-            background-color: #f9f9f9;
+            background:  rgba(14, 15, 20);
         }
         h1 {
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 30px;
+            text-align: left;
+            margin-bottom: 36px;
+            color: #FFF;
+            font-size: 42px;
+            font-weight: 700;
+        }
+        p{
+          color: #FFF;
+          font-size: 14px;
+          font-weight: 300;
+          opacity: 0.8;
+        }
+        h2{
+          color: #FFF;
+          font-size: 24px;
+          font-weight: 700;
+          margin-top: 58px;
+        }
+        table{
+            color: #FFF;
         }
         .error {
             color: #e74c3c;
@@ -34,8 +54,7 @@
             max-height: 500px;
             overflow-y: auto;
             white-space: pre-wrap;
-            background-color: white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background: rgba(255, 255, 255, 0.80);
         }
         audio {
             width: 100%;
@@ -86,13 +105,34 @@
             background-color: #95a5a6;
             cursor: not-allowed;
         }
-        .file-upload {
+        .file-upload form{
             margin: 20px 0;
-            padding: 20px;
-            border: 2px dashed #bdc3c7;
-            border-radius: 5px;
-            text-align: center;
-            background-color: white;
+            display: flex;
+            gap: 18px;
+        }
+        .file-upload input{
+          padding: 20px 24px 0 24px;
+          display: flex;
+          width: 370px;
+          height: 75px;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 10px;
+          border-radius: 13px;
+          border: 1px solid rgba(255, 255, 255, 0.25);
+          background: rgba(255, 255, 255, 0.10);
+          justify-content: center;
+          align-items: center;
+        }
+        .file-upload button{
+          border-radius: 15px;
+          background: #5D35EB;
+          box-shadow: 0px 4px 25px 0px rgba(93, 53, 235, 0.25);
+          display: flex;
+          width: 419px;
+          height: 98px;
+          justify-content: center;
+          align-items: center;
         }
         .file-upload:hover {
             border-color: #3498db;
@@ -102,10 +142,22 @@
             font-size: 14px;
             color: #7f8c8d;
         }
+        #generateAudioBtn{
+          border-radius: 7px;
+          background: var(--general-pink100, #F73871);
+          box-shadow: 0px 5px 25px 0px rgba(247, 56, 113, 0.25);
+          display: inline-flex;
+          padding: 10px 20px;
+          justify-content: center;
+          align-items: center;
+          color: rgba(255, 255, 255, 0.90);
+          font-size: 14px;
+          font-weight: 700;
+        }
     </style>
 </head>
 <body>
-    <h1>Text zu Sprache Konverter</h1>
+    <h1>Sprachassistent </h1>
     <p>Konvertieren Sie Ihre deutschen Texte in natürliche Sprachausgabe</p>
 
     {% if error %}
@@ -134,7 +186,20 @@
 
         <input type="hidden" id="sessionId" value="{{ session_id }}">
     {% endif %}
+    <br><br><br>
+    <table id="resultsTable" border="1" style="width:100%; margin-top:20px; border-collapse: collapse;">
+        <thead>
+            <tr>
+                <th>Modell</th>
+                <th>Zeit zur Generierung (s)</th>
+                <th>Dateigröße (KB)</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
 
+    <br><br><br>
 <script>
 document.getElementById('generateAudioBtn').addEventListener('click', () => {
     const sessionId = document.getElementById('sessionId').value;
@@ -147,6 +212,10 @@ document.getElementById('generateAudioBtn').addEventListener('click', () => {
     loadingDiv.style.display = 'block';
     audioContainer.style.display = 'block';
     audioInfoDiv.innerHTML = '';
+
+    // Очистить таблицу результатов
+    const resultsTableBody = document.querySelector('#resultsTable tbody');
+    resultsTableBody.innerHTML = '';
 
     engines.forEach(engine => {
         // Создать элемент "Загрузка..."
@@ -166,25 +235,58 @@ document.getElementById('generateAudioBtn').addEventListener('click', () => {
         })
         .then(res => res.json())
         .then(data => {
+            if(data.error){
+                wrapper.innerHTML = `<strong>${engine}</strong>: Fehler – ${data.error}`;
+                return;
+            }
+
             wrapper.innerHTML = ''; // Очистить "Загрузка..."
 
             const engineTitle = document.createElement('h3');
-            engineTitle.textContent = `Modell: ${engine}`;
+            engineTitle.textContent = `Modell: ${data.engine}`;
+
             const audio = document.createElement('audio');
             audio.controls = true;
             audio.src = data.audio_path;
 
+            const info = document.createElement('p');
+            info.innerHTML = `
+                Dauer: ${data.duration}s<br>
+                Größe: ${data.size_kb} KB<br>
+                ${data.phonemes ? `Phoneme: <code>${data.phonemes}</code>` : ''}
+            `;
+
             wrapper.appendChild(engineTitle);
             wrapper.appendChild(audio);
+            wrapper.appendChild(info);
+
+            // Добавить строку в таблицу результатов
+            const tr = document.createElement('tr');
+
+            const tdEngine = document.createElement('td');
+            tdEngine.textContent = data.engine;
+
+            const tdDuration = document.createElement('td');
+            tdDuration.textContent = data.duration;
+
+            const tdSize = document.createElement('td');
+            tdSize.textContent = data.size_kb;
+
+            tr.appendChild(tdEngine);
+            tr.appendChild(tdDuration);
+            tr.appendChild(tdSize);
+
+            resultsTableBody.appendChild(tr);
         })
         .catch(err => {
             wrapper.innerHTML = `<strong>${engine}</strong>: Fehler – ${err.message}`;
         });
     });
 
-    loadingDiv.style.display = 'none'; // Скрыть общий лоадер
+    loadingDiv.style.display = 'none';
 });
 </script>
+
 
 
 </body>
