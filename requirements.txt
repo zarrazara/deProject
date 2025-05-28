@@ -16,3 +16,4 @@ pyttsx3==2.98
 edge-tts==7.0.2
 librosa==0.10.0
 soundfile==0.13.1
+gunicorn
