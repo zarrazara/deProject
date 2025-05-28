@@ -324,8 +324,7 @@ def generate_audio():
 
 
 if __name__ == '__main__':
-    import os
-    port = int(os.environ.get("PORT", 10000))
-    app.secret_key = 'super_secret_key'
-    app.run(host="0.0.0.0", port=port)
+    app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key')
+    port = int(os.getenv("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
 
