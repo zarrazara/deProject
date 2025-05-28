@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import os
 from werkzeug.utils import secure_filename
-import fitz  # PyMuPDF
+import fitz
 from ebooklib import epub, ITEM_DOCUMENT
 from bs4 import BeautifulSoup
 from gtts import gTTS
@@ -11,15 +11,19 @@ from TTS.api import TTS
 from openai import OpenAI
 import soundfile as sf
 from dotenv import load_dotenv
-load_dotenv()  # Загружает переменные из .env
+import edge_tts
+import asyncio
+import pyttsx3
+
+load_dotenv()
 
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'txt', 'epub', 'pdf'}
-MAX_TEXT_LENGTH_FOR_TTS = 5000  # Ограничение для TTS в символах
+MAX_TEXT_LENGTH_FOR_TTS = 5000
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Максимальный размер файла 16MB
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('static', exist_ok=True)
@@ -52,19 +56,6 @@ def extract_text_from_pdf(filepath):
         raise Exception(f"Ошибка при чтении PDF файла: {str(e)}")
 
 
-def extract_text_from_epub(filepath):
-    try:
-        book = epub.read_epub(filepath)
-        text = ""
-        for item in book.get_items():
-            if item.get_type() == ITEM_DOCUMENT:
-                soup = BeautifulSoup(item.get_content(), 'html.parser')
-                text += soup.get_text() + "\n"
-        return text
-    except Exception as e:
-        raise Exception(f"Ошибка при чтении EPUB файла: {str(e)}")
-
-
 def synthesize_gtts(text, lang='de'):
     """Синтез речи с помощью gTTS"""
     try:
@@ -86,7 +77,6 @@ def synthesize_coqui(text):
         audio_filename = f"audio_coqui_{uuid.uuid4().hex}.wav"
         output_path = os.path.join('static', audio_filename)
 
-        # Генерация аудио с помощью Coqui TTS (без speaker_wav и lang)
         coqui_tts.tts_to_file(
             text=text_for_tts,
             file_path=output_path
@@ -97,7 +87,7 @@ def synthesize_coqui(text):
         raise Exception(f"Ошибка при синтезе речи (Coqui): {str(e)}")
 
 
-def synthesize_openai(text, voice="nova"):
+def synthesize_openai(text, voice="fable"):
     """Синтез речи с помощью OpenAI TTS"""
     try:
         text_for_tts = text[:MAX_TEXT_LENGTH_FOR_TTS]
@@ -105,16 +95,52 @@ def synthesize_openai(text, voice="nova"):
         output_path = os.path.join('static', audio_filename)
 
         response = client.audio.speech.create(
-            model="tts-1",  # или "tts-1-hd" для улучшенного качества
+            model="tts-1-hd",
             voice=voice,
             input=text_for_tts,
-            speed=1.0  # Опционально: регулировка скорости (0.25–4.0)
+            speed=1.0
         )
 
         response.stream_to_file(output_path)
         return audio_filename
     except Exception as e:
         raise Exception(f"Ошибка при синтезе речи (OpenAI): {str(e)}")
+
+
+async def synthesize_edge_async(text, voice="de-DE-KatjaNeural"):
+    """Синтез речи с помощью Edge TTS"""
+    try:
+        audio_filename = f"audio_edge_{uuid.uuid4().hex}.mp3"
+        output_path = os.path.join('static', audio_filename)
+
+        communicate = edge_tts.Communicate(text[:MAX_TEXT_LENGTH_FOR_TTS], voice)
+        await communicate.save(output_path)
+        return audio_filename
+    except Exception as e:
+        raise Exception(f"Ошибка при синтезе речи (Edge TTS): {str(e)}")
+
+
+def synthesize_edge(text, voice="de-DE-KatjaNeural"):
+    return asyncio.run(synthesize_edge_async(text, voice))
+
+
+def synthesize_pyttsx3(text, voice_id=None):
+    """Синтез речи с помощью pyttsx3 (оффлайн)"""
+    try:
+        audio_filename = f"audio_pyttsx3_{uuid.uuid4().hex}.wav"
+        output_path = os.path.join('static', audio_filename)
+
+        engine = pyttsx3.init()
+
+        if voice_id:
+            engine.setProperty('voice', voice_id)
+
+        engine.save_to_file(text[:MAX_TEXT_LENGTH_FOR_TTS], output_path)
+        engine.runAndWait()
+
+        return audio_filename
+    except Exception as e:
+        raise Exception(f"Ошибка при синтезе речи (pyttsx3): {str(e)}")
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -139,8 +165,6 @@ def upload_file():
                     book_text = extract_text_from_txt(filepath)
                 elif ext == 'pdf':
                     book_text = extract_text_from_pdf(filepath)
-                elif ext == 'epub':
-                    book_text = extract_text_from_epub(filepath)
                 else:
                     return render_template('index.html', error=f"Формат {ext} не поддерживается.")
 
@@ -185,11 +209,14 @@ def generate_audio():
         if tts_engine == 'coqui':
             audio_filename = synthesize_coqui(book_text)
         elif tts_engine == 'openai':
-            audio_filename = synthesize_openai(book_text)  # Новый вариант
+            audio_filename = synthesize_openai(book_text)
+        elif tts_engine == 'edge':
+            audio_filename = synthesize_edge(book_text)
+        elif tts_engine == 'pyttsx3':
+            audio_filename = synthesize_pyttsx3(book_text)
         else:
             audio_filename = synthesize_gtts(book_text)
 
-        os.remove(temp_text_file)
 
         return jsonify({
             'audio_path': url_for('static', filename=audio_filename),

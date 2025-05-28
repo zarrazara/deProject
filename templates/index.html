@@ -123,105 +123,69 @@
         <h2>Extrahiertes Text:</h2>
         <div class="text-container">{{ book_text }}</div>
 
-        <h2>Sprachsynthese Optionen:</h2>
-        <div class="tts-options">
-            <label class="tts-option">
-                <input type="radio" name="tts_engine" value="gtts" checked>
-                gTTS (Google)
-            </label>
-            <label class="tts-option">
-                <input type="radio" name="tts_engine" value="coqui">
-                Coqui TTS
-            </label>
-            <label class="tts-option">
-                <input type="radio" name="tts_engine" value="openai">
-                OpenAI (Premium)
-            </label>
-        </div>
-
         <button id="generateAudioBtn">Audio generieren</button>
         <div id="loading">Audio wird generiert, bitte warten...</div>
 
         <div id="audioContainer" style="display: none;">
-            <h2>Generiertes Audio (<span id="engineName">gTTS</span>):</h2>
-            <audio controls id="audioPlayer">
-                Ihr Browser unterstützt das Audio-Element nicht.
-            </audio>
+            <h2>Generiertes Audio:</h2>
             <div class="audio-info" id="audioInfo"></div>
         </div>
+
 
         <input type="hidden" id="sessionId" value="{{ session_id }}">
     {% endif %}
 
-    <script>
-        document.getElementById('generateAudioBtn').addEventListener('click', function() {
-            const btn = this;
-            const loading = document.getElementById('loading');
-            const audioContainer = document.getElementById('audioContainer');
-            const audioInfo = document.getElementById('audioInfo');
-            const sessionId = document.getElementById('sessionId').value;
-            const ttsEngine = document.querySelector('input[name="tts_engine"]:checked').value;
+<script>
+document.getElementById('generateAudioBtn').addEventListener('click', () => {
+    const sessionId = document.getElementById('sessionId').value;
+    const engines = ['gtts', 'coqui', 'openai', 'edge', 'pyttsx3'];
+    const loadingDiv = document.getElementById('loading');
+    const audioContainer = document.getElementById('audioContainer');
+    const audioInfoDiv = document.getElementById('audioInfo');
 
-            // Сброс предыдущего аудио
-            audioContainer.style.display = 'none';
-            audioInfo.textContent = '';
+    // Очистка и показ
+    loadingDiv.style.display = 'block';
+    audioContainer.style.display = 'block';
+    audioInfoDiv.innerHTML = '';
 
-            btn.disabled = true;
-            loading.style.display = 'block';
+    engines.forEach(engine => {
+        // Создать элемент "Загрузка..."
+        const wrapper = document.createElement('div');
+        const loadingText = document.createElement('p');
+        loadingText.textContent = `Generiere Audio mit ${engine}...`;
+        wrapper.appendChild(loadingText);
+        audioInfoDiv.appendChild(wrapper);
 
-            fetch('/generate_audio', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `session_id=${encodeURIComponent(sessionId)}&tts_engine=${encodeURIComponent(ttsEngine)}`
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.error) {
-                    throw new Error(data.error);
-                }
+        // Отправить запрос
+        fetch('/generate_audio', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: `session_id=${sessionId}&tts_engine=${engine}`
+        })
+        .then(res => res.json())
+        .then(data => {
+            wrapper.innerHTML = ''; // Очистить "Загрузка..."
 
-                const audioPlayer = document.getElementById('audioPlayer');
-                const engineName = document.getElementById('engineName');
+            const engineTitle = document.createElement('h3');
+            engineTitle.textContent = `Modell: ${engine}`;
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = data.audio_path;
 
-                // Установка источника аудио
-                audioPlayer.src = data.audio_path;
-
-                // Отображение названия движка
-                const engineNames = {
-                    'gtts': 'Google TTS',
-                    'coqui': 'Coqui TTS',
-                    'openai': 'OpenAI TTS'
-                };
-                engineName.textContent = engineNames[data.engine] || data.engine;
-
-                // Информация о качестве
-                audioInfo.textContent = `Qualität: ${
-                    data.engine === 'openai' ? 'Hoch (neuronal)' :
-                    data.engine === 'coqui' ? 'Mittel (neuronal)' :
-                    'Basis (konkatenativ)'
-                }`;
-
-                // Показываем аудиоплеер после загрузки
-                audioPlayer.oncanplay = () => {
-                    audioContainer.style.display = 'block';
-                };
-            })
-            .catch(error => {
-                alert('Fehler: ' + error.message);
-                console.error('Error:', error);
-            })
-            .finally(() => {
-                btn.disabled = false;
-                loading.style.display = 'none';
-            });
+            wrapper.appendChild(engineTitle);
+            wrapper.appendChild(audio);
+        })
+        .catch(err => {
+            wrapper.innerHTML = `<strong>${engine}</strong>: Fehler – ${err.message}`;
         });
-    </script>
+    });
+
+    loadingDiv.style.display = 'none'; // Скрыть общий лоадер
+});
+</script>
+
+
 </body>
 </html>

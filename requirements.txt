@@ -12,3 +12,5 @@ TTS
 soundfile
 openai
 python-dotenv
+edge-tts
+pyttsx3
